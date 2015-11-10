@@ -331,9 +331,11 @@ static int read_uint64(const char* s, const char* end, uint64_t* out) {
   return 1;
 }
 
-static int read_int64(const char* s, const char* end, uint64_t* out) {
+static int read_int64(const char* s, const char* end, uint64_t* out, int allow_signed) {
   int has_sign = 0;
   if (*s == '-') {
+    if (!allow_signed) 
+      return 0;
     has_sign = 1;
     s++;
   }
@@ -500,6 +502,11 @@ static int read_double(const char* s, const char* end, double* out) {
 static int read_uint32_token(WasmToken t, uint32_t* out) {
   const char* p = t.range.start.pos;
   return read_int32(p, t.range.end.pos, out, 0);
+}
+
+static int read_uint64_token(WasmToken t, uint64_t* out) {
+    const char* p = t.range.start.pos;
+    return read_int64(p, t.range.end.pos, out, 0);
 }
 
 static WasmToken read_token(WasmParser* parser) {
@@ -1144,7 +1151,7 @@ static void parse_literal(WasmParser* parser,
 
     case WASM_TYPE_I64: {
       uint64_t value;
-      if (!read_int64(p, end, &value))
+      if (!read_int64(p, end, &value, 1))
         FATAL_AT(parser, t.range.start, "invalid i64 literal \"%.*s\"\n",
                  (int)(end - p), p);
       number->i64 = value;
@@ -2028,12 +2035,12 @@ static void preparse_module(WasmParser* parser, WasmModule* module) {
         seen_memory = 1;
         t = read_token(parser);
         expect_atom(parser, t);
-        if (!read_uint32_token(t, &module->initial_memory_size))
+        if (!read_uint64_token(t, &module->initial_memory_size))
           FATAL_AT(parser, t.range.start, "invalid initial memory size\n");
 
         t = read_token(parser);
         if (t.type == WASM_TOKEN_TYPE_ATOM) {
-          if (!read_uint32_token(t, &module->max_memory_size))
+          if (!read_uint64_token(t, &module->max_memory_size))
             FATAL_AT(parser, t.range.start, "invalid max memory size\n");
 
           if (module->max_memory_size < module->initial_memory_size) {

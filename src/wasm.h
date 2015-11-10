@@ -294,8 +294,8 @@ typedef struct WasmModule {
   WasmBindingVector import_bindings;
   WasmSegmentVector segments;
   WasmFunctionPtrVector function_table;
-  uint32_t initial_memory_size;
-  uint32_t max_memory_size;
+  uint64_t initial_memory_size;
+  uint64_t max_memory_size;
 } WasmModule;
 
 #endif /* WASM_H */

@@ -16,18 +16,25 @@
 #define DUMP_OCTETS_PER_LINE 16
 #define DUMP_OCTETS_PER_GROUP 2
 
-#define SEGMENT_SIZE 13
+#define SEGMENT_SIZE 21
 #define SEGMENT_ADDRESS_OFFSET 0
-#define SEGMENT_OFFSET_OFFSET 4
-#define SEGMENT_SIZE_OFFSET 8
-#define SEGMENT_INIT_OFFSET 12
+/* 4 -> 8 */
+#define SEGMENT_OFFSET_OFFSET 8
+/* 8 -> 16 */
+#define SEGMENT_SIZE_OFFSET 16
+/* 12 -> 20 */
+#define SEGMENT_INIT_OFFSET 20
 
-#define GLOBAL_SIZE 6
+/* 6 -> 10 */
+#define GLOBAL_SIZE 10
 #define GLOBAL_NAME_OFFSET_OFFSET 0
-#define GLOBAL_MEM_TYPE_OFFSET 4
-#define GLOBAL_EXPORT_OFFSET 5
+/* 4 -> 8 */
+#define GLOBAL_MEM_TYPE_OFFSET 8
+/* 5 -> 9 */
+#define GLOBAL_EXPORT_OFFSET 9
 
-#define IMPORT_SIZE 7
+/* 7 -> 11 */
+#define IMPORT_SIZE 11
 #define IMPORT_FLAGS_OFFSET 0
 #define IMPORT_SIGNATURE_OFFSET 1
 #define IMPORT_NAME_OFFSET 3
@@ -125,10 +132,10 @@ static int is_power_of_two(uint32_t x) {
   return x && ((x & (x - 1)) == 0);
 }
 
-static uint32_t log_two_u32(uint32_t x) {
+static uint32_t log_two_u32(uint64_t x) {
   if (!x)
     return 0;
-  return sizeof(unsigned int) * 8 - __builtin_clz(x - 1);
+  return sizeof(unsigned int) * 16 - __builtin_clzl(x - 1);
 }
 
 static WasmTypeV8 wasm_type_to_v8_type(WasmType type) {
@@ -202,7 +209,8 @@ static void dump_memory(const void* start,
   while (p < end) {
     const uint8_t* line = p;
     const uint8_t* line_end = p + DUMP_OCTETS_PER_LINE;
-    printf("%07x: ", (int)((void*)p - start + offset));
+    /* extend address from 7 uint_8 to 15 uint_8 */
+    printf("%015x: ", (int)((void*)p - start + offset));
     while (p < line_end) {
       int i;
       for (i = 0; i < DUMP_OCTETS_PER_GROUP; ++i, ++p) {
@@ -286,7 +294,8 @@ OUT_TYPE(f64, double)
 
 OUT_AT_TYPE(u8, uint8_t)
 OUT_AT_TYPE(u16, uint16_t)
-OUT_AT_TYPE(u32, uint32_t)
+/* OUT_AT_TYPE(u32, uint32_t) */
+OUT_AT_TYPE(u64, uint64_t)
 
 #undef OUT_AT_TYPE
 
@@ -454,8 +463,10 @@ static void out_module_header(Context* ctx, WasmModule* module) {
     for (i = 0; i < module->segments.size; ++i) {
       WasmSegment* segment = &module->segments.data[i];
       print_header(ctx, "segment header", i);
-      out_u32(buf, segment->address, "segment address");
-      out_u32(buf, 0, "segment data offset");
+      /* extend segment address */
+      out_u64(buf, segment->address, "segment address");
+      /* extend segment data offset */
+      out_u64(buf, 0, "segment data offset");
       out_u32(buf, segment->size, "segment size");
       out_u8(buf, 1, "segment init");
     }
@@ -469,7 +480,8 @@ static void out_module_header(Context* ctx, WasmModule* module) {
       WasmVariable* global = &module->globals.data[i];
       print_header(ctx, "global header", i);
       const uint8_t global_type_codes[WASM_NUM_V8_TYPES] = {-1, 4, 6, 8, 9};
-      out_u32(buf, 0, "global name offset");
+      /* extend global name offfset  */
+      out_u64(buf, 0, "global name offset");
       out_u8(buf, global_type_codes[wasm_type_to_v8_type(global->type)],
              "global mem type");
       out_u8(buf, 0, "export global");
@@ -511,7 +523,8 @@ static void out_module_header(Context* ctx, WasmModule* module) {
           WASM_FUNCTION_FLAG_NAME | WASM_FUNCTION_FLAG_IMPORT;
       out_u8(buf, flags, "import flags");
       out_u16(buf, import->signature_index, "import signature index");
-      out_u32(buf, 0, "import name offset");
+      /* extend import name offset */
+      out_u64(buf, 0, "import name offset");
     }
   }
 }
@@ -574,7 +587,8 @@ static void out_module_footer(Context* ctx, WasmModule* module) {
 
     for (i = 0; i < ctx->num_assert_funcs; ++i) {
       AssertFunc* assert_func = &ctx->assert_funcs[i];
-      out_u32_at(buf, assert_func->name_offset + diff_size, buf->size,
+      /* extend FIXUP func name offset */
+      out_u64_at(buf, assert_func->name_offset + diff_size, buf->size,
                  "FIXUP func name offset");
       out_cstr(buf, assert_func->name, "export name");
     }
@@ -585,7 +599,8 @@ static void out_module_footer(Context* ctx, WasmModule* module) {
   for (i = 0; i < module->segments.size; ++i) {
     print_header(ctx, "segment data", i);
     WasmSegment* segment = &module->segments.data[i];
-    out_u32_at(buf, offset + SEGMENT_OFFSET_OFFSET, buf->size,
+    /* extend FIXUP segment data offset */
+    out_u64_at(buf, offset + SEGMENT_OFFSET_OFFSET, buf->size,
                "FIXUP segment data offset");
     out_segment(buf, segment, "segment data");
     offset += SEGMENT_SIZE;
@@ -597,7 +612,8 @@ static void out_module_footer(Context* ctx, WasmModule* module) {
   offset = ctx->function_section_offset;
   for (i = 0; i < module->imports.size; ++i) {
     WasmImport* import = &module->imports.data[i];
-    out_u32_at(buf, offset + IMPORT_NAME_OFFSET, buf->size,
+    /* extend FIXUP import name offset */
+    out_u64_at(buf, offset + IMPORT_NAME_OFFSET, buf->size,
                "FIXUP import name offset");
     out_cstr(buf, import->func_name, "import name");
     offset += IMPORT_SIZE;
@@ -611,7 +627,8 @@ static void out_module_footer(Context* ctx, WasmModule* module) {
     uint16_t body_size = read_u16_at(buf, offset + body_size_offset);
 
     if (function->exported) {
-      out_u32_at(buf, offset + FUNCTION_NAME_OFFSET, buf->size,
+      /* extend FIXUP func name offset */
+      out_u64_at(buf, offset + FUNCTION_NAME_OFFSET, buf->size,
                  "FIXUP func name offset");
 
       /* HACK(binji): v8-native-prototype crashes when you export functions
@@ -719,7 +736,8 @@ static void before_function(WasmParserCallbackInfo* info) {
   out_u8(&ctx->buf, flags, "func flags");
   uint16_t signature_index = (uint16_t)function->signature_index;
   out_u16(&ctx->buf, signature_index, "func signature index");
-  out_u32(&ctx->buf, 0, "func name offset");
+  /* extend func name offset */
+  out_u64(&ctx->buf, 0, "func name offset");
   if (has_locals) {
     int num_locals[WASM_NUM_V8_TYPES] = {};
     int i;
